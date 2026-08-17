@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ระบบแปลงอัตราแลกเปลี่ยนเงินตรา</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-100 min-h-screen flex items-center justify-center p-4">
+
+  <div class="bg-white p-6 rounded-2xl shadow-xl w-full max-w-md">
+    <h1 class="text-2xl font-bold text-slate-800 text-center mb-1">โปรแกรมแปลงสกุลเงิน</h1>
+    
+    <p id="last-updated" class="text-xs text-slate-500 text-center mb-6">
+      อัปเดตล่าสุด: <span id="update-time">-</span>
+    </p>
+
+    <div class="space-y-4">
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-1">ต้นทาง</label>
+        <div class="flex gap-2">
+          <input type="number" id="amount-one" placeholder="0.00" min="0" step="any"
+            class="flex-1 px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none">
+          <select id="currency-one" class="px-3 py-2 border border-slate-300 rounded-lg bg-slate-50 font-medium">
+            <option value="THB" selected>THB</option>
+            <option value="USD">USD</option>
+            <option value="EUR">EUR</option>
+            <option value="JPY">JPY</option>
+          </select>
+        </div>
+      </div>
+
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-1">ปลายทาง</label>
+        <div class="flex gap-2">
+          <input type="number" id="amount-two" placeholder="0.00" min="0" step="any"
+            class="flex-1 px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none">
+          <select id="currency-two" class="px-3 py-2 border border-slate-300 rounded-lg bg-slate-50 font-medium">
+            <option value="THB">THB</option>
+            <option value="USD" selected>USD</option>
+            <option value="EUR">EUR</option>
+            <option value="JPY">JPY</option>
+          </select>
+        </div>
+      </div>
+      <div id="rate-text" class="text-xs font-semibold text-blue-600 text-center py-1">
+        1 THB = 0.028 USD
+      </div>
+
+      <button id="clear-btn" 
+        class="w-full bg-slate-200 hover:bg-slate-300 text-slate-700 font-medium py-2 rounded-lg transition duration-200 text-sm">
+        ล้างข้อมูล
+      </button>
+    </div>
+
+    <div class="mt-6 border-t border-slate-200 pt-4">
+      <div class="flex justify-between items-center mb-3">
+        <h2 class="text-sm font-bold text-slate-700">ประวัติการแปลงเงิน (10 รายการล่าสุด)</h2>
+        <button id="clear-history-btn" class="text-xs text-red-500 hover:underline">
+          ล้างประวัติ
+        </button>
+      </div>
+      <ul id="history-list" class="space-y-1.5 text-sm text-slate-600 max-h-48 overflow-y-auto">
+        <li class="text-xs text-slate-400 text-center py-2" id="empty-history">ไม่มีประวัติการทำรายการ</li>
+      </ul>
+    </div>
+  </div>
+
+  <script>
+    const rates = {
+      USD: 1,
+      THB: 35.5,
+      EUR: 0.92,
+      JPY: 155.0
+    };
+
+    const amountOne = document.getElementById('amount-one');
+    const currencyOne = document.getElementById('currency-one');
+    const amountTwo = document.getElementById('amount-two');
+    const currencyTwo = document.getElementById('currency-two');
+    const rateText = document.getElementById('rate-text');
+    const updateTimeEl = document.getElementById('update-time');
+    const clearBtn = document.getElementById('clear-btn');
+    const historyList = document.getElementById('history-list');
+    const clearHistoryBtn = document.getElementById('clear-history-btn');
+    const emptyHistory = document.getElementById('empty-history');
+
+    let history = [];
+    let debounceTimer;
+
+    function setUpdateTime() {
+      const now = new Date();
+      updateTimeEl.textContent = now.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    }
+
+    function getRate() {
+      const c1 = currencyOne.value;
+      const c2 = currencyTwo.value;
+      return (rates[c2] / rates[c1]);
+    }
+
+    function updateRateText() {
+      const rate = getRate();
+      rateText.textContent = `1 ${currencyOne.value} = ${rate.toFixed(4)} ${currencyTwo.value}`;
+    }
+    function calculateFromOne() {
+      const val = parseFloat(amountOne.value);
+      if (isNaN(val) || val <= 0) {
+        amountTwo.value = '';
+        return;
+      }
+      const rate = getRate();
+      const result = val * rate;
+      amountTwo.value = result.toFixed(2);
+      
+      triggerAddHistory(val, currencyOne.value, result, currencyTwo.value);
+    }
+    function calculateFromTwo() {
+      const val = parseFloat(amountTwo.value);
+      if (isNaN(val) || val <= 0) {
+        amountOne.value = '';
+        return;
+      }
+      const rate = getRate();
+      const result = val / rate;
+      amountOne.value = result.toFixed(2);
+
+      triggerAddHistory(result, currencyOne.value, val, currencyTwo.value);
+    }
+
+    function triggerAddHistory(fromVal, fromCurr, toVal, toCurr) {
+      clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
+        addHistory(fromVal, fromCurr, toVal, toCurr);
+      }, 800);
+    }
+
+    function addHistory(fromVal, fromCurr, toVal, toCurr) {
+      const entry = `${Number(fromVal).toLocaleString('th-TH', {maximumFractionDigits: 2})} ${fromCurr} → ${Number(toVal).toLocaleString('th-TH', {maximumFractionDigits: 2})} ${toCurr}`;
+
+      if (history.length > 0 && history[0] === entry) return;
+
+      history.unshift(entry);
+      if (history.length > 10) {
+        history.pop();
+      }
+      renderHistory();
+    }
+
+    function renderHistory() {
+      historyList.innerHTML = '';
+      if (history.length === 0) {
+        historyList.appendChild(emptyHistory);
+        return;
+      }
+      history.forEach(item => {
+        const li = document.createElement('li');
+        li.className = 'bg-slate-50 px-3 py-1.5 rounded border border-slate-100 flex justify-between text-xs text-slate-700';
+        li.textContent = item;
+        historyList.appendChild(li);
+      });
+    }
+
+    amountOne.addEventListener('input', calculateFromOne);
+    amountTwo.addEventListener('input', calculateFromTwo);
+
+    currencyOne.addEventListener('change', () => {
+      updateRateText();
+      calculateFromOne();
+    });
+
+    currencyTwo.addEventListener('change', () => {
+      updateRateText();
+      calculateFromOne();
+    });
+
+    clearBtn.addEventListener('click', () => {
+      amountOne.value = '';
+      amountTwo.value = '';
+      currencyOne.value = 'THB';
+      currencyTwo.value = 'USD';
+      updateRateText();
+      setUpdateTime();
+    });
+
+    clearHistoryBtn.addEventListener('click', () => {
+      history = [];
+      renderHistory();
+    });
+
+    setUpdateTime();
+    updateRateText();
+  </script>
+</body>
+</html>
